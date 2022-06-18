@@ -5,20 +5,21 @@ VMPATH=~/Vmin
 DEFAULT_EDITOR=vi
 HV=$(which qemu-system-x86_64)
 VIRTBR=br0
+USE_VNC=yes
 ## Config PATH End ##
 
 ## Utils ##
-_prettytable_char_top_left="┌"
-_prettytable_char_horizontal="─"
-_prettytable_char_vertical="│"
-_prettytable_char_bottom_left="└"
-_prettytable_char_bottom_right="┘"
-_prettytable_char_top_right="┐"
-_prettytable_char_vertical_horizontal_left="├"
-_prettytable_char_vertical_horizontal_right="┤"
-_prettytable_char_vertical_horizontal_top="┬"
-_prettytable_char_vertical_horizontal_bottom="┴"
-_prettytable_char_vertical_horizontal="┼"
+_prettytable_char_top_left="+"
+_prettytable_char_horizontal="="
+_prettytable_char_vertical="|"
+_prettytable_char_bottom_left="+"
+_prettytable_char_bottom_right="+"
+_prettytable_char_top_right="+"
+_prettytable_char_vertical_horizontal_left="|"
+_prettytable_char_vertical_horizontal_right="|"
+_prettytable_char_vertical_horizontal_top="="
+_prettytable_char_vertical_horizontal_bottom="="
+_prettytable_char_vertical_horizontal="|"
 
 
 # Escape codes
@@ -121,6 +122,10 @@ is_setup_done()
 
 is_vm_exist()
 {
+    if [ "$1" == "" ]; then
+        fail_msg "Please supply VM name"
+        exit 1
+    fi
     if [ ! -d "$VMPATH/$1" ]; then  
         fail_msg "VM $1 doesn't exist. Please create if first !!" console
         exit 1
@@ -162,12 +167,20 @@ start()
     is_setup_done
     is_vm_exist $1
     begin_msg "Starting VM $1" console
+    use_vnc=$USE_VNC
     while read LINE; do declare local $LINE; done < $VMPATH/$1/vmin.conf
 	if [ ! "$2" == "" ]; then
 	   cdrom="-boot d -cdrom $2"
 	fi
     disk="-drive file=$VMPATH/$1/disk.img,if=virtio,media=disk,format=raw"
-    $HV -vnc :$(get_vnc_port) -enable-kvm -daemonize -m $memory -smp cores=$vcpu -pidfile $VMPATH/$1/PID $disk $cdrom
+
+    if [[ ! "$use_vnc" == "" && "$use_vnc" == "yes" ]]; then
+        vnc="-vnc :$(get_vnc_port)"
+    fi
+
+    net="-netdev user,id=n1,net=192.168.40.0/24,dhcpstart=192.168.40.4 -device virtio-net-pci,netdev=n1"
+
+    $HV $vnc -enable-kvm -daemonize -m $memory -smp cores=$vcpu -pidfile $VMPATH/$1/PID $disk $cdrom $net
 }
 
 stop()
@@ -226,7 +239,11 @@ list()
         if [ -f "$VMPATH/$vm/PID" ]; then
         	local vmpid=$(cat $VMPATH/$vm/PID)
             local state="Running"
-            local vnc=$(ss -antlp | grep "pid=$vmpid" | awk '{print $4}')
+            if [[ ! "$use_vnc" == "" && "$use_vnc" == "no" ]]; then
+                local vnc="VNC Disable"
+            else
+                local vnc=$(ss -antlp | grep "pid=$vmpid" | awk '{print $4}')
+            fi
         else
 			local vmpid="None"
             local state="Stopped"
@@ -262,6 +279,7 @@ mac=$mac
 memory=$memory
 vcpu=$vcpu
 disk=$disk
+use_vnc=$USE_VNC
 EOF
     qemu-img create -f raw $VMPATH/$vmname/disk.img $disk 
 }
