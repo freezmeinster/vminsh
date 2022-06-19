@@ -1,11 +1,16 @@
-#!/bin/sh
+#!/bin/sh -x
 
-## CONFIG PATH ##
-VMPATH=~/Vmin
+## Default Config ##
+VMPATH=/opt/Vmin
 DEFAULT_EDITOR=vi
 HV=$(which qemu-system-x86_64)
 VIRTBR=br0
+VIRTBRIP=9.8.7.1
+VIRTBRNET=255.255.255.0
 USE_VNC=yes
+NAT_INTERFACE=eth0
+DHCP_IP_START=2
+DHCP_IP_END=30
 ## Config PATH End ##
 
 ## Utils ##
@@ -178,7 +183,7 @@ start()
         vnc="-vnc :$(get_vnc_port)"
     fi
 
-    net="-netdev user,id=n1,net=192.168.40.0/24,dhcpstart=192.168.40.4 -device virtio-net-pci,netdev=n1"
+    net="-netdev tap,id=n1,script=$VMPATH/qemu-ifup -device e1000,netdev=n1,mac=$mac"
 
     $HV $vnc -enable-kvm -daemonize -m $memory -smp cores=$vcpu -pidfile $VMPATH/$1/PID $disk $cdrom $net
 }
@@ -225,6 +230,60 @@ setup()
     begin_msg "Setup Done" console
 }
 
+setupnetwork()
+{
+    chkbr=$(ip link show type bridge|grep $VIRTBR)
+    if [ "$chkbr" == "" ]; then 
+        ip link add $VIRTBR type bridge
+    else
+        ip link delete $VIRTBR
+        ip link add $VIRTBR type bridge
+    fi
+    ip link set $VIRTBR up
+    ip addr add $VIRTBRIP/$VIRTBRNET dev $VIRTBR
+
+    cat << EOF > $VMPATH/qemu-ifup
+#!/bin/sh
+set -x
+
+if [ -n "\$1" ];then
+        ip tuntap add \$1 mode tap user `whoami`
+        ip link set \$1 up
+        sleep 0.5s
+        ip link set \$1 master $VIRTBR
+        exit 0
+    else
+        echo "Error: no interface specified"
+        exit 1
+fi
+EOF
+    chmod +x $VMPATH/qemu-ifup
+}
+
+setupnat()
+{
+    echo ""
+}
+
+setupdhcp()
+{
+    local startip=$(IFS=. read ip1 ip2 ip3 ip4 <<< "$VIRTBRIP"; echo "$ip1.$ip2.$ip3.$DHCP_IP_START")
+    local endip=$(IFS=. read ip1 ip2 ip3 ip4 <<< "$VIRTBRIP"; echo "$ip1.$ip2.$ip3.$DHCP_IP_END")
+    cat <<EOF> $VMPATH/dnsmasq.conf
+interface=$VIRTBR
+except-interface=lo
+domain=slk
+dhcp-range=$startip,$endip,$VIRTBRNET,12h
+dhcp-authoritative
+dhcp-leasefile=$VMPATH/dnsmasq.leases
+EOF
+if [ -f $VMPATH/dnsmasq.pid ]; then
+    kill $(cat $VMPATH/dnsmasq.pid)
+fi 
+rm -rf $VMPATH/dnsmasq.leases
+dnsmasq --conf-file=$VMPATH/dnsmasq.conf --pid-file=$VMPATH/dnsmasq.pid
+}
+
 list()
 {
 	is_setup_done
@@ -234,7 +293,9 @@ list()
         exit 0 
     fi
 	DATA='PID\tName\tMac Address\tVNC\tMemory\tvCPU\tDisk\tState\n'
-    for vm in $(ls $VMPATH); do
+    for vm in $(ls -d $VMPATH/*/); do
+        local vm=$(echo $vm|rev|cut -d "/" -f2|rev)
+        local use_vnc=$USE_VNC
         while read LINE; do declare local $LINE; done < $VMPATH/$vm/vmin.conf
         if [ -f "$VMPATH/$vm/PID" ]; then
         	local vmpid=$(cat $VMPATH/$vm/PID)
@@ -279,7 +340,6 @@ mac=$mac
 memory=$memory
 vcpu=$vcpu
 disk=$disk
-use_vnc=$USE_VNC
 EOF
     qemu-img create -f raw $VMPATH/$vmname/disk.img $disk 
 }
@@ -322,7 +382,24 @@ config)
     config $2
     ;;
 setup)
-    setup
+    case "$2" in
+        network)
+            setupnetwork
+        ;;
+        nat)
+            setupnat
+        ;;
+        dhcp)
+            setupdhcp
+        ;;
+        base)
+            setup
+        ;;
+        *)
+            echo "Usage: $0 setup {base|network|nat|dhcp}"
+            exit 1
+    esac
+    exit 0
     ;;
 destroy)
     destroy $2
@@ -334,5 +411,4 @@ create)
     echo "Usage: $0 {create|start|stop|restart|setup|list|destroy}"
     exit 1
 esac
-
 exit 0
