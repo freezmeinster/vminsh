@@ -3,6 +3,7 @@
 ## Default Config ##
 VMPATH=/opt/Vmin
 DEFAULT_EDITOR=vi
+DEFAULT_DISK_DRIVER=virtio
 HV=$(which qemu-system-x86_64)
 VIRTBR=br0
 VIRTBRIP=9.8.7.1
@@ -154,6 +155,19 @@ gen_mac()
 {
 	echo 00:60:2f$(od -txC -An -N3 /dev/random|tr \  :)
 }
+gen_ip()
+{
+    allIP=( $DHCP_IP_START )
+    for vm in $(ls -d $VMPATH/*/); do
+        while read LINE; do declare local $LINE; done < $vm/vmin.conf
+        if [ ! "$ip" == "" ]; then
+            allIP+=($(echo $ip| rev | cut -d "." -f1 | rev))
+        fi
+    done
+    local slk=`expr ${allIP[-1]} + 1`
+    local startip=$(IFS=. read ip1 ip2 ip3 ip4 <<< "$VIRTBRIP"; echo "$ip1.$ip2.$ip3.$slk")
+    echo $startip
+}
 
 get_vnc_port()
 {
@@ -173,11 +187,12 @@ start()
     is_vm_exist $1
     begin_msg "Starting VM $1" console
     use_vnc=$USE_VNC
+    disk_driver=$DEFAULT_DISK_DRIVER
     while read LINE; do declare local $LINE; done < $VMPATH/$1/vmin.conf
 	if [ ! "$2" == "" ]; then
 	   cdrom="-boot d -cdrom $2"
 	fi
-    disk="-drive file=$VMPATH/$1/disk.img,if=virtio,media=disk,format=raw"
+    disk="-drive file=$VMPATH/$1/disk.img,if=$disk_driver,media=disk,format=raw"
 
     if [[ ! "$use_vnc" == "" && "$use_vnc" == "yes" ]]; then
         vnc="-vnc :$(get_vnc_port)"
@@ -262,13 +277,25 @@ EOF
 
 setupnat()
 {
-    echo ""
+    sysctl net.ipv4.ip_forward=1
+    iptables -t nat -D POSTROUTING -o $NAT_INTERFACE -j MASQUERADE
+    iptables -t nat -A POSTROUTING -o $NAT_INTERFACE -j MASQUERADE
 }
 
 setupdhcp()
 {
     local startip=$(IFS=. read ip1 ip2 ip3 ip4 <<< "$VIRTBRIP"; echo "$ip1.$ip2.$ip3.$DHCP_IP_START")
     local endip=$(IFS=. read ip1 ip2 ip3 ip4 <<< "$VIRTBRIP"; echo "$ip1.$ip2.$ip3.$DHCP_IP_END")
+    local dhcpmember=""
+    for vm in $(ls -d $VMPATH/*/); do
+        while read LINE; do declare local $LINE; done < $vm/vmin.conf
+        local vm=$(echo $vm|rev|cut -d "/" -f2|rev)
+        if [[ ! "$ip" == "" && ! "$mac" == "" ]]; then
+            local dmn=$(echo $vm| tr '[:upper:]' '[:lower:]')
+            dhcpmember+="dhcp-host=$mac,$ip,$dmn.slk,1d\n"
+        fi
+    done
+    dhcpmember=$(printf $dhcpmember)
     cat <<EOF> $VMPATH/dnsmasq.conf
 interface=$VIRTBR
 except-interface=lo
@@ -276,6 +303,8 @@ domain=slk
 dhcp-range=$startip,$endip,$VIRTBRNET,12h
 dhcp-authoritative
 dhcp-leasefile=$VMPATH/dnsmasq.leases
+
+$dhcpmember
 EOF
 if [ -f $VMPATH/dnsmasq.pid ]; then
     kill $(cat $VMPATH/dnsmasq.pid)
@@ -292,7 +321,7 @@ list()
     	begin_msg "You don't have VM yet, please create one with command \"$0 create\" !!" console
         exit 0 
     fi
-	DATA='PID\tName\tMac Address\tVNC\tMemory\tvCPU\tDisk\tState\n'
+	DATA='PID\tName\tMac Address\tIP Address\tVNC\tMemory\tvCPU\tDisk\tState\n'
     for vm in $(ls -d $VMPATH/*/); do
         local vm=$(echo $vm|rev|cut -d "/" -f2|rev)
         local use_vnc=$USE_VNC
@@ -310,9 +339,9 @@ list()
             local state="Stopped"
             local vnc="None"
         fi
-	    DATA+="$vmpid\t$vm\t$mac\t$vnc\t$memory\t$vcpu\t$disk\t$state\n"
+	    DATA+="$vmpid\t$vm\t$mac\t$ip\t$vnc\t$memory\t$vcpu\t$disk\t$state\n"
     done
-    echo -e $DATA | prettytable 8 blue
+    echo -e $DATA | prettytable 9 blue
 }
 
 create()
@@ -320,9 +349,12 @@ create()
     until read -p "VM name: " -e vmname && test "$vmname" != ""; do
     	continue
     done
-    default_mac=$(gen_mac)
+    local default_mac=$(gen_mac)
+    local default_ip=$(gen_ip)
     read -p "MAC Address [$default_mac]: " -e mac
     : ${mac:=$default_mac}
+    read -p "IP Address [$default_ip]: " -e ip
+    : ${ip:=$default_ip}
     read -p "vCPU Count [4]: " -e vcpu
     : ${vcpu:=4}
     read -p "Memory Capacity [4G]: " -e memory
@@ -337,6 +369,7 @@ create()
     mkdir -p $VMPATH/$vmname
     cat << EOF > $VMPATH/$vmname/vmin.conf
 mac=$mac
+ip=$ip
 memory=$memory
 vcpu=$vcpu
 disk=$disk
@@ -406,6 +439,9 @@ destroy)
     ;;
 create)
     create
+    ;;
+test)
+    gen_ip
     ;;
 *)
     echo "Usage: $0 {create|start|stop|restart|setup|list|destroy}"
