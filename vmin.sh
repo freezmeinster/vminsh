@@ -203,6 +203,8 @@ start()
 
     net="-netdev tap,id=n1,script=$VMPATH/qemu-ifup -device e1000,netdev=n1,mac=$mac"
 
+    setupdhcp
+
     $HV $vnc -enable-kvm -daemonize -m $memory -smp cores=$vcpu -pidfile $VMPATH/$1/PID $disk $cdrom $net
 }
 
@@ -262,7 +264,6 @@ setupnetwork()
 
     cat << EOF > $VMPATH/qemu-ifup
 #!/bin/sh
-set -x
 
 if [ -n "\$1" ];then
         ip tuntap add \$1 mode tap user `whoami`
