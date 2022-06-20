@@ -1,4 +1,4 @@
-#!/bin/sh -x
+#!/bin/sh
 
 ## Default Config ##
 VMPATH=/opt/Vmin
@@ -192,6 +192,9 @@ start()
 	if [ ! "$2" == "" ]; then
 	   cdrom="-boot d -cdrom $2"
 	fi
+	if [ ! "$3" == "" ]; then
+        cdrom+=" -drive file=$3,if=ide,media=cdrom"
+    fi
     disk="-drive file=$VMPATH/$1/disk.img,if=$disk_driver,media=disk,format=raw"
 
     if [[ ! "$use_vnc" == "" && "$use_vnc" == "yes" ]]; then
@@ -394,7 +397,7 @@ destroy()
 
 case "$1" in
 install)
-    start $2 $3
+    start $2 $3 $4
     ;;
 start)
     start $2
