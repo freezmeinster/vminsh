@@ -1,4 +1,4 @@
-#!/bin/sh -x
+#!/bin/sh
 
 ## Default Config ##
 VMPATH=/opt/Vmin
@@ -9,7 +9,7 @@ VIRTBR=br0
 VIRTBRIP=9.8.7.1
 VIRTBRNET=255.255.255.0
 USE_VNC=yes
-NAT_INTERFACE=eth0
+NAT_INTERFACE=wlan0
 DHCP_IP_START=2
 DHCP_IP_END=30
 ## Config PATH End ##
@@ -282,7 +282,8 @@ EOF
 setupnat()
 {
     sysctl net.ipv4.ip_forward=1
-    iptables -t nat -D POSTROUTING -o $NAT_INTERFACE -j MASQUERADE
+    local delnat=$(iptables-save | grep POSTROUTING | grep MASQ | sed "s|-A|-D|")
+    iptables -t nat $delnat
     iptables -t nat -A POSTROUTING -o $NAT_INTERFACE -j MASQUERADE
 }
 
