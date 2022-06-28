@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/sh -x
 
 ## Default Config ##
 VMPATH=/opt/Vmin
@@ -158,7 +158,7 @@ gen_mac()
 gen_ip()
 {
     allIP=( $DHCP_IP_START )
-    for vm in $(ls -d $VMPATH/*/); do
+    for vm in $(find $VMPATH/* -type d); do
         while read LINE; do declare local $LINE; done < $vm/vmin.conf
         if [ ! "$ip" == "" ]; then
             allIP+=($(echo $ip| rev | cut -d "." -f1 | rev))
@@ -291,9 +291,9 @@ setupdhcp()
     local startip=$(IFS=. read ip1 ip2 ip3 ip4 <<< "$VIRTBRIP"; echo "$ip1.$ip2.$ip3.$DHCP_IP_START")
     local endip=$(IFS=. read ip1 ip2 ip3 ip4 <<< "$VIRTBRIP"; echo "$ip1.$ip2.$ip3.$DHCP_IP_END")
     local dhcpmember=""
-    for vm in $(ls -d $VMPATH/*/); do
+    for vm in $(find $VMPATH/* -type d); do
         while read LINE; do declare local $LINE; done < $vm/vmin.conf
-        local vm=$(echo $vm|rev|cut -d "/" -f2|rev)
+        local vm=${vm##*/}
         if [[ ! "$ip" == "" && ! "$mac" == "" ]]; then
             local dmn=$(echo $vm| tr '[:upper:]' '[:lower:]')
             dhcpmember+="dhcp-host=$mac,$ip,$dmn.slk,1d\n"
