@@ -157,14 +157,15 @@ gen_mac()
 }
 gen_ip()
 {
-    allIP=( $DHCP_IP_START )
+    local allIP=( $DHCP_IP_START )
     for vm in $(find $VMPATH/* -type d); do
         while read LINE; do declare local $LINE; done < $vm/vmin.conf
         if [ ! "$ip" == "" ]; then
-            allIP+=($(echo $ip| rev | cut -d "." -f1 | rev))
+            local iptip=$(echo $ip| rev | cut -d "." -f1 | rev)
+            allIP+=($iptip)
         fi
     done
-    local slk=`expr ${allIP[-1]} + 1`
+    local slk=`expr ${allIP[1]} + 1`
     local startip=$(IFS=. read ip1 ip2 ip3 ip4 <<< "$VIRTBRIP"; echo "$ip1.$ip2.$ip3.$slk")
     echo $startip
 }
