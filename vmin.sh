@@ -203,10 +203,12 @@ start()
     fi
 
     net="-netdev tap,id=n1,script=$VMPATH/qemu-ifup -device e1000,netdev=n1,mac=$mac"
+    
+    mouse="-device nec-usb-xhci,id=usb,bus=pci.0,addr=0x4 -device usb-tablet"
 
     setupdhcp
 
-    $HV $vnc -enable-kvm -daemonize -m $memory -smp cores=$vcpu -pidfile $VMPATH/$1/PID $disk $cdrom $net
+    $HV $vnc -enable-kvm -daemonize -m $memory -smp cores=$vcpu -pidfile $VMPATH/$1/PID $disk $cdrom $net $mouse
 }
 
 stop()
