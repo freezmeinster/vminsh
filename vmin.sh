@@ -1,5 +1,10 @@
 #!/bin/sh
 
+if [ ! "$(whoami)" == "root"  ]; then
+    echo "Superuser permission needed, please run this script as root"
+    exit 0
+fi
+
 ## Default Config ##
 VMPATH=/opt/Vmin
 DEFAULT_EDITOR=vi
@@ -13,6 +18,10 @@ NAT_INTERFACE=wlan0
 DHCP_IP_START=2
 DHCP_IP_END=30
 ## Config PATH End ##
+
+if [ -f ~/.config/vmin.conf ]; then
+    source ~/.config/vmin.conf
+fi
 
 ## Utils ##
 _prettytable_char_top_left="+"
